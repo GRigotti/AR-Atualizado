@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Visualizador AR</title>
+
+  <!-- Versão fixada (não usar @latest em produção) -->
+  <script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
+
+  <style>
+    :root {
+      --bg: #1c1c1e;
+      --surface: rgba(255, 255, 255, 0.92);
+      --surface-active: #ffffff;
+      --text: #232323;
+      --accent: #2f6fed;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100dvh;
+      background-color: var(--bg);
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    model-viewer {
+      position: absolute;
+      inset: 0;
+      width: 100vw;
+      height: 100dvh;
+      --poster-color: transparent;
+    }
+
+    /* Menu de variações do modelo */
+    .menu-modelos {
+      position: absolute;
+      top: max(16px, env(safe-area-inset-top));
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      z-index: 10;
+      flex-wrap: wrap;
+      justify-content: center;
+      width: 92%;
+    }
+
+    .btn-trocar {
+      background-color: var(--surface);
+      color: var(--text);
+      border: none;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+      backdrop-filter: blur(6px);
+      transition: background-color 0.15s ease, transform 0.1s ease;
+    }
+
+    .btn-trocar:active { transform: scale(0.96); }
+
+    .btn-trocar[aria-pressed="true"] {
+      background-color: var(--accent);
+      color: #ffffff;
+    }
+
+    /* Botão de entrar em AR */
+    .botao-ar {
+      background-color: #ffffff;
+      color: #232323;
+      border: none;
+      border-radius: 10px;
+      position: absolute;
+      bottom: max(32px, env(safe-area-inset-bottom));
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 13px 26px;
+      font-size: 16px;
+      font-weight: 600;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+      z-index: 10;
+    }
+
+    /* Indicador de carregamento */
+    .status {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      font-size: 15px;
+      background-color: var(--bg);
+      z-index: 5;
+      transition: opacity 0.25s ease;
+      pointer-events: none;
+      text-align: center;
+      padding: 0 24px;
+    }
+
+    .status.hidden { opacity: 0; }
+
+    .status.error { color: #ff8a80; }
+  </style>
+</head>
+
+<body>
+
+  <div class="menu-modelos" role="group" aria-label="Variações do modelo">
+    <button class="btn-trocar" aria-pressed="true" data-modelo="Teste">Padrão</button>
+    <button class="btn-trocar" aria-pressed="false" data-modelo="Teste_Lado">De Lado</button>
+    <button class="btn-trocar" aria-pressed="false" data-modelo="Teste_pe">Em Pé</button>
+    <button class="btn-trocar" aria-pressed="false" data-modelo="Teste_virada">Virada</button>
+  </div>
+
+  <model-viewer
+    id="viewer"
+    src="models/Teste.glb"
+    ios-src="models/Teste.usdz"
+    alt="Modelo 3D exibido em realidade aumentada"
+    ar
+    ar-modes="webxr scene-viewer quick-look"
+    camera-controls
+    auto-rotate
+    shadow-intensity="1"
+    exposure="1">
+
+    <button slot="ar-button" class="botao-ar">
+      📸 Ver no meu espaço
+    </button>
+  </model-viewer>
+
+  <div id="status" class="status">Carregando modelo…</div>
+
+  <script>
+    const viewer = document.getElementById('viewer');
+    const status = document.getElementById('status');
+    const botoes = document.querySelectorAll('.btn-trocar');
+
+    function trocarModelo(nomeBase) {
+      status.classList.remove('hidden', 'error');
+      status.textContent = 'Carregando modelo…';
+
+      viewer.src = `models/${nomeBase}.glb`;
+      viewer.setAttribute('ios-src', `models/${nomeBase}.usdz`);
+
+      botoes.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.modelo === nomeBase)));
+    }
+
+    botoes.forEach(botao => {
+      botao.addEventListener('click', () => trocarModelo(botao.dataset.modelo));
+    });
+
+    viewer.addEventListener('load', () => status.classList.add('hidden'));
+
+    viewer.addEventListener('error', (evento) => {
+      status.classList.remove('hidden');
+      status.classList.add('error');
+      status.textContent = 'Não foi possível carregar este modelo. Verifique o arquivo e tente novamente.';
+      console.error('Erro ao carregar modelo:', evento.detail);
+    });
+
+    viewer.addEventListener('ar-status', (evento) => {
+      if (evento.detail.status === 'failed') {
+        status.classList.remove('hidden');
+        status.classList.add('error');
+        status.textContent = 'A Realidade Aumentada não está disponível neste dispositivo/navegador.';
+      }
+    });
+  </script>
+
+</body>
+</html>
