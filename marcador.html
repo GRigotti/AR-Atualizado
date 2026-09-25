@@ -19,9 +19,11 @@
       --ok: #1e9e5a;
     }
     * { box-sizing: border-box; }
+    /* Fundo TRANSPARENTE: o vídeo da câmera que o AR.js cria fica atrás da página.
+       Com fundo sólido aqui, a câmera ficava escondida (tela cinza). */
     html, body {
       margin: 0; padding: 0; overflow: hidden;
-      background: var(--bg);
+      background: transparent !important;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
 
@@ -49,7 +51,7 @@
     .aviso {
       position: fixed; z-index: 20;
       left: 50%; transform: translateX(-50%);
-      bottom: max(24px, env(safe-area-inset-bottom));
+      bottom: calc(max(24px, env(safe-area-inset-bottom)) + 34px);
       background: rgba(28,28,30,.85); color: #fff;
       padding: 11px 18px; border-radius: 999px;
       font-size: 15px; text-align: center; max-width: 92vw;
@@ -70,6 +72,7 @@
 
     .link-voltar {
       position: fixed; z-index: 20; right: 12px;
+      text-shadow: 0 1px 3px rgba(0,0,0,.8);
       bottom: max(24px, env(safe-area-inset-bottom));
       color: #fff; font-size: 13px; opacity: .8;
     }
@@ -84,6 +87,9 @@
     .carregando.oculto { opacity: 0; pointer-events: none; }
     .barra { width: 220px; height: 6px; border-radius: 3px; background: #3a3a3c; overflow: hidden; }
     .barra i { display: block; height: 100%; width: 0%; background: var(--accent); transition: width .2s; }
+
+    /* Esconde o botão "VR" do A-Frame (ele abria o modo imersivo com tela preta) */
+    .a-enter-vr, .a-enter-ar, .a-enter-vr-button, .a-enter-ar-button { display: none !important; }
 
     @media (prefers-reduced-motion: reduce) {
       .cartao, .aviso, .guia, .carregando { transition: none; }
@@ -136,6 +142,7 @@
     id="cena"
     embedded
     vr-mode-ui="enabled: false"
+    xr-mode-ui="enabled: false"
     renderer="logarithmicDepthBuffer: true; colorManagement: true; antialias: true"
     arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono; patternRatio: 0.5; maxDetectionRate: 60; canvasWidth: 1280; canvasHeight: 960;">
 
