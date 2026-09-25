@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Tutorial de montagem AR – Marcadores</title>
+
+  <!-- Versões fixadas: A-Frame 1.6.0 + AR.js 3.4.8 (compatíveis entre si) -->
+  <script src="https://cdn.jsdelivr.net/npm/aframe@1.6.0/dist/aframe-v1.6.0.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@ar-js-org/ar.js@3.4.8/aframe/build/aframe-ar.js"></script>
+
+  <style>
+    :root {
+      --bg: #1c1c1e;
+      --surface: rgba(255, 255, 255, 0.94);
+      --text: #232323;
+      --muted: #5f6368;
+      --accent: #2f6fed;
+      --ok: #1e9e5a;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; overflow: hidden;
+      background: var(--bg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    /* Cartão da etapa atual (topo) */
+    .cartao {
+      position: fixed; z-index: 20;
+      top: max(12px, env(safe-area-inset-top)); left: 12px; right: 12px;
+      max-width: 520px; margin: 0 auto;
+      background: var(--surface); color: var(--text);
+      border-radius: 14px; padding: 14px 16px;
+      box-shadow: 0 4px 18px rgba(0,0,0,.3);
+      backdrop-filter: blur(8px);
+      transition: transform .2s ease, opacity .2s ease;
+    }
+    .cartao.oculto { opacity: 0; transform: translateY(-12px); pointer-events: none; }
+    .cartao .contador { font-size: 13px; color: var(--muted); margin: 0 0 2px; }
+    .cartao h1 { font-size: 19px; margin: 0 0 6px; line-height: 1.25; }
+    .cartao p { font-size: 15px; margin: 0; line-height: 1.45; }
+    .progresso { display: flex; gap: 6px; margin-top: 10px; }
+    .progresso span { flex: 1; height: 4px; border-radius: 2px; background: #d5d7db; }
+    .progresso span.vista { background: var(--ok); }
+    .progresso span.atual { background: var(--accent); }
+
+    /* Aviso inferior: "procure o marcador", erros etc. */
+    .aviso {
+      position: fixed; z-index: 20;
+      left: 50%; transform: translateX(-50%);
+      bottom: max(24px, env(safe-area-inset-bottom));
+      background: rgba(28,28,30,.85); color: #fff;
+      padding: 11px 18px; border-radius: 999px;
+      font-size: 15px; text-align: center; max-width: 92vw;
+      transition: opacity .2s ease;
+    }
+    .aviso.oculto { opacity: 0; }
+    .aviso.erro { background: #b3261e; border-radius: 12px; }
+
+    /* Moldura-guia no centro enquanto nenhum marcador é visto */
+    .guia {
+      position: fixed; z-index: 15; pointer-events: none;
+      top: 50%; left: 50%; width: 58vmin; height: 58vmin;
+      transform: translate(-50%, -50%);
+      border: 3px dashed rgba(255,255,255,.75); border-radius: 12px;
+      transition: opacity .2s ease;
+    }
+    .guia.oculto { opacity: 0; }
+
+    .link-voltar {
+      position: fixed; z-index: 20; right: 12px;
+      bottom: max(24px, env(safe-area-inset-bottom));
+      color: #fff; font-size: 13px; opacity: .8;
+    }
+
+    /* Tela de carregamento */
+    .carregando {
+      position: fixed; inset: 0; z-index: 30;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+      background: var(--bg); color: #fff; font-size: 15px; text-align: center; padding: 0 24px;
+      transition: opacity .3s ease;
+    }
+    .carregando.oculto { opacity: 0; pointer-events: none; }
+    .barra { width: 220px; height: 6px; border-radius: 3px; background: #3a3a3c; overflow: hidden; }
+    .barra i { display: block; height: 100%; width: 0%; background: var(--accent); transition: width .2s; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .cartao, .aviso, .guia, .carregando { transition: none; }
+    }
+  </style>
+</head>
+
+<body>
+  <div id="carregando" class="carregando">
+    <div id="textoCarregando">Carregando modelos…</div>
+    <div class="barra"><i id="barra"></i></div>
+  </div>
+
+  <div id="cartao" class="cartao oculto" aria-live="polite">
+    <p class="contador" id="contador"></p>
+    <h1 id="titulo"></h1>
+    <p id="instrucao"></p>
+    <div class="progresso" id="progresso"></div>
+  </div>
+
+  <div id="guia" class="guia"></div>
+  <div id="aviso" class="aviso">Enquadre o marcador da etapa inteiro na câmera</div>
+  <a class="link-voltar" href="index.html">Ver sem marcador</a>
+
+  <script>
+    /* =====================================================================
+       CONFIGURAÇÃO DAS ETAPAS — edite só aqui.
+       - marcador: arquivo .patt do marcador impresso daquela etapa
+       - modelo:   .glb exibido sobre o marcador
+       - tamanho:  maior dimensão do modelo, em "larguras de marcador"
+                   (1 = mesmo tamanho do quadrado preto impresso)
+       - rotacao:  ajuste de orientação do modelo em graus "x y z"
+       - altura:   quanto o modelo "flutua" acima do papel (em larguras)
+       ===================================================================== */
+    const ETAPAS = [
+      { marcador: 'marcadores/etapa-1.patt', modelo: 'models/OWL.glb',
+        titulo: 'Posicione a base', instrucao: 'Coloque a base na bancada com o furo maior voltado para você.',
+        tamanho: 1.2, rotacao: '0 0 0', altura: 0 },
+      { marcador: 'marcadores/etapa-2.patt', modelo: 'models/OWL.glb',
+        titulo: 'Encaixe o suporte', instrucao: 'Alinhe os pinos do suporte com os furos da base e pressione até travar.',
+        tamanho: 1.2, rotacao: '0 0 0', altura: 0 },
+      { marcador: 'marcadores/etapa-3.patt', modelo: 'models/OWL.glb',
+        titulo: 'Aperte os parafusos', instrucao: 'Aperte os 4 parafusos em cruz, sem torque final.',
+        tamanho: 1.2, rotacao: '0 0 0', altura: 0 },
+      // Há marcadores prontos até a etapa 6 (etapa-4.patt, etapa-5.patt, etapa-6.patt).
+    ];
+  </script>
+
+  <a-scene
+    id="cena"
+    embedded
+    vr-mode-ui="enabled: false"
+    renderer="logarithmicDepthBuffer: true; colorManagement: true; antialias: true"
+    arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono; patternRatio: 0.5; maxDetectionRate: 60; canvasWidth: 1280; canvasHeight: 960;">
+
+    <a-assets id="assets" timeout="60000"></a-assets>
+
+    <a-entity light="type: ambient; intensity: 0.9"></a-entity>
+    <a-entity light="type: directional; intensity: 1.2" position="1 3 2"></a-entity>
+
+    <!-- Os marcadores são criados pelo script abaixo a partir de ETAPAS -->
+    <a-entity camera></a-entity>
+  </a-scene>
+
+  <script>
+    /* Ajusta automaticamente a escala do modelo para caber no marcador */
+    AFRAME.registerComponent('ajustar-tamanho', {
+      schema: { tamanho: { default: 1 }, altura: { default: 0 } },
+      init() {
+        this.el.addEventListener('model-loaded', () => {
+          const obj = this.el.getObject3D('mesh');
+          if (!obj) return;
+          // caixa medida no referencial local da entidade (ignora a pose atual do marcador)
+          this.el.object3D.updateMatrixWorld(true);
+          const caixa = new THREE.Box3().setFromObject(obj)
+            .applyMatrix4(this.el.object3D.matrixWorld.clone().invert());
+          const dim = caixa.getSize(new THREE.Vector3());
+          const maior = Math.max(dim.x, dim.y, dim.z) || 1;
+          const s = this.data.tamanho / maior;
+          this.el.object3D.scale.set(s, s, s);
+          // apoia a base do modelo sobre o papel, centralizado no marcador
+          const centro = caixa.getCenter(new THREE.Vector3());
+          obj.position.set(-centro.x, -caixa.min.y + this.data.altura / s, -centro.z);
+        });
+      }
+    });
+
+    const cena = document.getElementById('cena');
+    const assets = document.getElementById('assets');
+    const el = id => document.getElementById(id);
+    const vistas = new Set();
+    let etapaAtual = null;
+
+    // Pré-carrega cada .glb uma única vez (vários passos podem usar o mesmo arquivo)
+    const idsModelo = {};
+    [...new Set(ETAPAS.map(e => e.modelo))].forEach((arquivo, i) => {
+      const item = document.createElement('a-asset-item');
+      item.id = 'modelo-' + i;
+      item.setAttribute('src', arquivo);
+      assets.appendChild(item);
+      idsModelo[arquivo] = item.id;
+    });
+
+    // Cria um <a-marker> por etapa
+    ETAPAS.forEach((etapa, i) => {
+      const marcador = document.createElement('a-marker');
+      marcador.setAttribute('type', 'pattern');
+      marcador.setAttribute('url', etapa.marcador);
+      // suavização: reduz a "tremedeira" do modelo
+      marcador.setAttribute('smooth', 'true');
+      marcador.setAttribute('smoothCount', '8');
+      marcador.setAttribute('smoothTolerance', '0.01');
+      marcador.setAttribute('smoothThreshold', '5');
+      marcador.setAttribute('emitevents', 'true');
+
+      const modelo = document.createElement('a-entity');
+      modelo.setAttribute('gltf-model', '#' + idsModelo[etapa.modelo]);
+      modelo.setAttribute('rotation', etapa.rotacao || '0 0 0');
+      modelo.setAttribute('ajustar-tamanho', { tamanho: etapa.tamanho || 1, altura: etapa.altura || 0 });
+      marcador.appendChild(modelo);
+
+      marcador.addEventListener('markerFound', () => mostrarEtapa(i));
+      marcador.addEventListener('markerLost', () => { if (etapaAtual === i) esconderEtapa(); });
+
+      cena.insertBefore(marcador, cena.querySelector('[camera]'));
+    });
+
+    // Barra de progresso
+    el('progresso').innerHTML = ETAPAS.map(() => '<span></span>').join('');
+
+    function mostrarEtapa(i) {
+      etapaAtual = i;
+      vistas.add(i);
+      const e = ETAPAS[i];
+      el('contador').textContent = `Etapa ${i + 1} de ${ETAPAS.length}`;
+      el('titulo').textContent = e.titulo;
+      el('instrucao').textContent = e.instrucao;
+      el('progresso').querySelectorAll('span').forEach((s, j) => {
+        s.className = j === i ? 'atual' : (vistas.has(j) ? 'vista' : '');
+      });
+      el('cartao').classList.remove('oculto');
+      el('aviso').classList.add('oculto');
+      el('guia').classList.add('oculto');
+    }
+
+    function esconderEtapa() {
+      etapaAtual = null;
+      // mantém o cartão por 1,5 s para a leitura não sumir num tremor de câmera
+      clearTimeout(esconderEtapa.t);
+      esconderEtapa.t = setTimeout(() => {
+        if (etapaAtual !== null) return;
+        el('cartao').classList.add('oculto');
+        el('aviso').classList.remove('oculto');
+        el('guia').classList.remove('oculto');
+      }, 1500);
+    }
+
+    // Progresso do carregamento
+    let prontos = 0;
+    const total = assets.querySelectorAll('a-asset-item').length;
+    assets.querySelectorAll('a-asset-item').forEach(item => {
+      item.addEventListener('progress', ev => {
+        const { loadedBytes, totalBytes } = ev.detail || {};
+        if (totalBytes) el('barra').style.width = Math.round((prontos + loadedBytes / totalBytes) / total * 100) + '%';
+      });
+      item.addEventListener('loaded', () => {
+        prontos++;
+        el('barra').style.width = Math.round(prontos / total * 100) + '%';
+      });
+      item.addEventListener('error', () => mostrarErro(`Não foi possível carregar ${item.getAttribute('src')}. Verifique o nome do arquivo.`));
+    });
+    cena.addEventListener('loaded', () => el('carregando').classList.add('oculto'));
+
+    // Câmera
+    function mostrarErro(msg) {
+      el('carregando').classList.add('oculto');
+      el('guia').classList.add('oculto');
+      const a = el('aviso');
+      a.textContent = msg;
+      a.classList.remove('oculto');
+      a.classList.add('erro');
+    }
+    window.addEventListener('camera-error', () =>
+      mostrarErro('Sem acesso à câmera. Permita a câmera para este site nas configurações do navegador e recarregue a página.'));
+    if (location.protocol === 'http:' && location.hostname !== 'localhost') {
+      mostrarErro('A câmera só funciona em HTTPS. Abra este endereço pelo GitHub Pages (https://…).');
+    }
+  </script>
+</body>
+</html>
